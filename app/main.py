@@ -1,21 +1,16 @@
 # app/main.py
 
-from typing import List, Optional, Literal
-
-from typing import Dict
-from langchain_core.documents import Document
-from app.retrievers import unified_retrieve
-from app.helpers import call_llm_with_docs, docs_summary_for_response
-
+from typing import Dict, List, Literal, Optional
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.helpers import call_llm_with_docs, docs_summary_for_response
 from app.retrievers import (
+    actor_retriever,
     customer_retriever,
     film_retriever,
-    actor_retriever,
     unified_retrieve,
 )
 
@@ -25,6 +20,9 @@ app = FastAPI(
     description="RAG over customers, films, and actors using PGVector + LangChain.",
     version="0.1.0",
 )
+
+# in-memory chat history store keyed by session_id
+chat_histories: Dict[str, List["ChatMessage"]] = {}
 
 
 class AskRequest(BaseModel):
@@ -81,6 +79,78 @@ def ask_unified(payload: AskUnifiedRequest):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    """Lightweight front end for trying the RAG API."""
+
+    return """
+    <html>
+      <head>
+        <title>RAG Sakila Demo</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 2rem; background: #f8fafc; }
+          .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); max-width: 800px; }
+          textarea { width: 100%; min-height: 120px; padding: 0.5rem; }
+          button { margin-top: 0.75rem; padding: 0.6rem 1.2rem; border: none; border-radius: 4px; background: #2563eb; color: white; cursor: pointer; }
+          button:disabled { background: #94a3b8; cursor: not-allowed; }
+          pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h2>Ask the Sakila knowledge base</h2>
+          <p>Enter a question about customers, films, or actors. Results are powered by the unified RAG endpoint.</p>
+          <textarea id="question" placeholder="e.g. Which actor appears in the most films?"></textarea>
+          <button id="ask-btn" onclick="ask()">Ask</button>
+          <h3>Answer</h3>
+          <pre id="answer">Waiting for a question...</pre>
+          <h3>Used Documents</h3>
+          <pre id="docs">(none yet)</pre>
+        </div>
+        <script>
+          async function ask() {
+            const btn = document.getElementById('ask-btn');
+            const question = document.getElementById('question').value.trim();
+            const answerEl = document.getElementById('answer');
+            const docsEl = document.getElementById('docs');
+
+            if (!question) {
+              alert('Please enter a question first.');
+              return;
+            }
+
+            btn.disabled = true;
+            answerEl.textContent = 'Thinking...';
+            docsEl.textContent = 'Loading context...';
+
+            try {
+              const resp = await fetch('/ask/unified', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question, top_k_each: 3 })
+              });
+
+              if (!resp.ok) {
+                const msg = await resp.text();
+                throw new Error(msg || 'Request failed');
+              }
+
+              const data = await resp.json();
+              answerEl.textContent = data.answer || '(no answer)';
+              docsEl.textContent = JSON.stringify(data.used_docs, null, 2);
+            } catch (err) {
+              answerEl.textContent = 'Error: ' + err.message;
+              docsEl.textContent = '(no docs)';
+            } finally {
+              btn.disabled = false;
+            }
+          }
+        </script>
+      </body>
+    </html>
+    """
 
 # app/main.py (add models)
 
