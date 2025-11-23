@@ -1,17 +1,23 @@
 # app/configs.py
 
 import os
-import psycopg2
 from functools import lru_cache
 
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+import psycopg2
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 
 # ---- ENV + URLS ----
 
-PGVECTOR_URL =os.getenv("PG_CONNECTION_STRING")
+# Ensure values from a local .env file are loaded when running outside a fully
+# configured cloud environment (e.g., local development or App Runner preview
+# tasks). This is a no-op if the file does not exist.
+load_dotenv()
+
+PGVECTOR_URL = os.getenv("PG_CONNECTION_STRING")
 if not PGVECTOR_URL:
-    raise ValueError("DATABASE_URL env var is not set")
+    raise ValueError("PG_CONNECTION_STRING env var is not set")
 
 
 
